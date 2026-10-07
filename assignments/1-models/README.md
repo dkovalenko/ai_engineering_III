@@ -89,6 +89,10 @@ PROMPT = """[SYSTEM] Session started at 2026-02-27T14:10:00Z
 
 Результати зберігаються у `responses/<CASE_NAME>/`.
 
+**Reasoning-моделі та `max_tokens`.** У `starter.py` і `ladder.py` є стеля `MAX_TOKENS` (зараз 8192). На OpenRouter цей ліміт — спільний бюджет видимого тексту і прихованих reasoning/thinking токенів (Gemini, зокрема `gemini-3.8-flash`, o-series, Claude з thinking, DeepSeek R1, Qwen3). Раніше тут стояло `1024`: модель витрачала бюджет на міркування і повертала обрізану або порожню відповідь з `finish_reason="length"`. Прибрати ліміт ховає проблему, а не пояснює її.
+
+`MAX_TOKENS` — стеля, не ціль: модель не дописує відповідь до ліміту, тож для звичайних моделей вартість не зростає. Temperature і Top-P не чіпай заради цього. Якщо в терміналі є `УВАГА` (вона ж потрапляє у файл у `responses/`, одразу під службовим рядком) — підніми `MAX_TOKENS`. Службовий рядок показує `completion_tokens`, `reasoning_tokens` і `visible_tokens` (`visible = completion − reasoning`). Опційна константа `REASONING_EFFORT` у `starter.py` (`None` за замовчуванням) керує глибиною thinking; залиш `None`, якщо порівнюєш семплювання, а не режим міркувань.
+
 ---
 
 ## 📂 Кейси для тестування
