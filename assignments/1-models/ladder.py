@@ -46,6 +46,11 @@ TEMPERATURE = 0.1
 TOP_P = 0.9
 SEED = 42
 
+# Стеля, не параметр семплювання. На OpenRouter max_tokens ділиться між
+# reasoning/thinking токенами і видимим текстом. 1024 для Qwen3, Gemini, Claude
+# thinking часто з'їдається міркуванням (finish_reason="length"). Див. starter.py.
+MAX_TOKENS = 8192
+
 # ── Правила Nebula-V (Кейс 3) ─────────────────────────────────────────────────
 NEBULA_RULES = """1. Типи акаунтів:
 Користувачі 'Standard' мають ліміт 10 ГБ. Акаунти 'Academic' (верифікація через .edu) отримують 50 ГБ безкоштовно.
@@ -71,8 +76,71 @@ PROMPT = f"""Дай відповідь на основі тексту:
 {NEBULA_RULES}"""
 
 
+def _field(obj, key):
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        return obj.get(key)
+    return getattr(obj, key, None)
+
+
+def token_counts(resp):
+    """(completion_tokens, reasoning_tokens). Будь-яке значення може бути None."""
+    usage = _field(resp, "usage")
+    completion = _field(usage, "completion_tokens")
+    details = _field(usage, "completion_tokens_details")
+    reasoning = _field(details, "reasoning_tokens")
+    return completion, reasoning
+
+
+def usage_line(finish_reason, completion_tokens, reasoning_tokens) -> str:
+    parts = []
+    if finish_reason:
+        parts.append(f"finish: {finish_reason}")
+    if completion_tokens is not None:
+        parts.append(f"completion_tokens: {completion_tokens}")
+    if reasoning_tokens is not None:
+        parts.append(f"reasoning_tokens: {reasoning_tokens}")
+        if completion_tokens is not None and reasoning_tokens <= completion_tokens:
+            parts.append(f"visible_tokens: {completion_tokens - reasoning_tokens}")
+    return " | ".join(parts)
+
+
+def truncation_warning(finish_reason, text, completion_tokens, reasoning_tokens):
+    """Пояснення, якщо відповідь обрізана. None, коли все гаразд."""
+    hit_limit = finish_reason in ("length", "max_tokens")
+    thinking_ate_budget = not (text or "").strip() and (reasoning_tokens or 0) > 0
+    if not hit_limit and not thinking_ate_budget:
+        return None
+
+    lines = ["УВАГА: видима відповідь обрізана або порожня."]
+    if hit_limit:
+        lines.append(
+            f"finish_reason={finish_reason!r}: модель зупинилась, "
+            f"бо вперлася в max_tokens={MAX_TOKENS}."
+        )
+    if reasoning_tokens:
+        detail = f"reasoning_tokens={reasoning_tokens}"
+        if completion_tokens is not None:
+            detail += f", completion_tokens={completion_tokens}"
+            if reasoning_tokens <= completion_tokens:
+                detail += f", visible_tokens={completion_tokens - reasoning_tokens}"
+        lines.append(detail + ".")
+        lines.append(
+            "На OpenRouter токени міркування (reasoning) входять у той самий max_tokens, "
+            "що й видимий текст. Підніми MAX_TOKENS на початку цього файлу."
+        )
+    else:
+        lines.append(
+            "Підніми MAX_TOKENS на початку цього файлу. Для reasoning-моделей "
+            "(Gemini, o-series, Claude thinking, DeepSeek R1, Qwen3) thinking-токени "
+            "теж витрачають цей бюджет."
+        )
+    return "\n".join(lines)
+
+
 def ask(model_id: str, prompt: str):
-    """Returns (text, elapsed_s, cost_usd_or_none)."""
+    """Returns a dict: text, elapsed_s, cost, finish_reason, token counts, warning."""
     start = time.time()
     resp = completion(
         model=model_id,
@@ -80,16 +148,36 @@ def ask(model_id: str, prompt: str):
         temperature=TEMPERATURE,
         top_p=TOP_P,
         seed=SEED,
-        max_tokens=1024,
+        max_tokens=MAX_TOKENS,
     )
     elapsed = time.time() - start
     cost = (getattr(resp, "_hidden_params", None) or {}).get("response_cost", None)
-    msg = resp.choices[0].message
-    text = msg.content or getattr(msg, "reasoning_content", None) or ""
-    return text, elapsed, cost
+    choice = resp.choices[0]
+    raw = choice.message.content
+    text = raw if isinstance(raw, str) else ""
+    finish_reason = _field(choice, "finish_reason")
+    completion_tokens, reasoning_tokens = token_counts(resp)
+    warning = truncation_warning(finish_reason, text, completion_tokens, reasoning_tokens)
+    return {
+        "text": text,
+        "elapsed": elapsed,
+        "cost": cost,
+        "finish_reason": finish_reason,
+        "completion_tokens": completion_tokens,
+        "reasoning_tokens": reasoning_tokens,
+        "warning": warning,
+    }
 
 
-def save_response(out_dir: Path, label: str, text: str, elapsed: float, cost):
+def save_response(
+    out_dir: Path,
+    label: str,
+    text: str,
+    elapsed: float,
+    cost,
+    usage: str = "",
+    warning: str | None = None,
+):
     case_dir = out_dir / "case5_capability_ladder"
     case_dir.mkdir(parents=True, exist_ok=True)
     slug = label.strip().replace(" ", "_").replace("(", "").replace(")", "").replace("~", "").replace("/", "-")
@@ -97,9 +185,14 @@ def save_response(out_dir: Path, label: str, text: str, elapsed: float, cost):
     cost_str = f"${cost:.6f}" if cost is not None else "n/a"
     header = (
         f"# temperature: {TEMPERATURE} | top_p: {TOP_P} | "
-        f"time: {elapsed:.1f}s | cost: {cost_str}\n"
+        f"time: {elapsed:.1f}s | cost: {cost_str}"
     )
-    path.write_text(header + text + "\n")
+    if usage:
+        header += f" | {usage}"
+    body = text or ""
+    if warning:
+        body = warning + "\n\n" + body
+    path.write_text(header + "\n" + body + "\n")
     return path
 
 
@@ -124,13 +217,26 @@ def main():
         print("─" * 70)
 
         try:
-            text, elapsed, cost = ask(model_id, PROMPT)
+            result = ask(model_id, PROMPT)
+            text = result["text"]
+            elapsed = result["elapsed"]
+            cost = result["cost"]
             cost_str = f"${cost:.6f}" if cost is not None else "n/a"
+            usage = usage_line(
+                result["finish_reason"],
+                result["completion_tokens"],
+                result["reasoning_tokens"],
+            )
             print(f"Time: {elapsed:.1f}s | Cost: {cost_str}")
+            if usage:
+                print(usage)
+            if result["warning"]:
+                print(result["warning"])
             print(text[:600] + ("…" if len(text) > 600 else ""))
-            path = save_response(out_dir, label, text, elapsed, cost)
+            path = save_response(out_dir, label, text, elapsed, cost, usage, result["warning"])
             print(f"  → {path.relative_to(out_dir.parent)}")
-            results.append((label, elapsed, cost_str, "OK"))
+            status = "TRUNCATED" if result["warning"] else "OK"
+            results.append((label, elapsed, cost_str, status))
         except Exception as e:
             print(f"ERROR: {e}")
             results.append((label, None, "n/a", "ERROR"))
