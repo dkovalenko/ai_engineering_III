@@ -81,17 +81,15 @@ TEMPERATURES = [0.1, 0.7, 1.2]
 TOP_P = 0.9
 SEED = 42
 
-# Стеля довжини відповіді, не параметр семплювання — Temperature і Top-P лишаються як були.
-# На OpenRouter max_tokens — спільний бюджет: приховані reasoning/thinking токени
-# плюс видимий текст. 1024 для Gemini, o-series, Claude thinking, DeepSeek R1 часто
-# закінчується ще на міркуванні, і текст приходить обрізаним (finish_reason="length").
-# 8192 лишає запас на короткі відповіді цього ДЗ. Це стеля, не ціль: модель
-# зупиняється, коли закінчила, і не дописує відповідь до ліміту.
+# Для деяких reasoning-моделей max_tokens охоплює приховані міркування і видимий
+# текст. При 1024 токенах відповідь може обірватися ще до завершення. Значення 8192
+# дає достатній запас для завдань нижче, але модель може зупинитися раніше.
+# Temperature і Top-P від цього ліміту не залежать.
 MAX_TOKENS = 8192
 
-# Необов'язково. None = рівень thinking за замовчуванням моделі (нічого не перезаписуємо).
-# Можна "low" / "medium" / "high". Не кожна модель приймає "none"; у Gemini 3.8 немає "minimal".
-# Це окремий важіль від Temperature / Top-P — не крути його, щоб «полагодити» семплювання.
+# None залишає налаштування моделі без змін. Значення "low", "medium" і "high"
+# використовуй лише для окремого експерименту з глибиною міркувань. Не всі моделі
+# підтримують однакові значення.
 REASONING_EFFORT = None
 
 
@@ -104,7 +102,7 @@ def _field(obj, key):
 
 
 def token_counts(resp):
-    """(completion_tokens, reasoning_tokens). Будь-яке значення може бути None."""
+    """Повертає completion_tokens і reasoning_tokens, якщо вони є у відповіді."""
     usage = _field(resp, "usage")
     completion = _field(usage, "completion_tokens")
     details = _field(usage, "completion_tokens_details")
@@ -126,17 +124,17 @@ def usage_line(finish_reason, completion_tokens, reasoning_tokens) -> str:
 
 
 def truncation_warning(finish_reason, text, completion_tokens, reasoning_tokens):
-    """Пояснення, якщо відповідь обрізана. None, коли все гаразд."""
+    """Повертає попередження, якщо відповідь могла впертися в ліміт."""
     hit_limit = finish_reason in ("length", "max_tokens")
     thinking_ate_budget = not (text or "").strip() and (reasoning_tokens or 0) > 0
     if not hit_limit and not thinking_ate_budget:
         return None
 
-    lines = ["УВАГА: видима відповідь обрізана або порожня."]
+    lines = ["УВАГА: відповідь обрізана або порожня."]
     if hit_limit:
         lines.append(
-            f"finish_reason={finish_reason!r}: модель зупинилась, "
-            f"бо вперлася в max_tokens={MAX_TOKENS}."
+            f"Модель досягла max_tokens={MAX_TOKENS} "
+            f"(finish_reason={finish_reason!r})."
         )
     if reasoning_tokens:
         detail = f"reasoning_tokens={reasoning_tokens}"
@@ -146,14 +144,13 @@ def truncation_warning(finish_reason, text, completion_tokens, reasoning_tokens)
                 detail += f", visible_tokens={completion_tokens - reasoning_tokens}"
         lines.append(detail + ".")
         lines.append(
-            "На OpenRouter токени міркування (reasoning) входять у той самий max_tokens, "
-            "що й видимий текст. Підніми MAX_TOKENS на початку цього файлу."
+            "Токени міркування можуть входити в той самий ліміт, що й видимий текст. "
+            "Збільш MAX_TOKENS і повтори запуск."
         )
     else:
         lines.append(
-            "Підніми MAX_TOKENS на початку цього файлу. Для reasoning-моделей "
-            "(Gemini, o-series, Claude thinking, DeepSeek R1) thinking-токени "
-            "теж витрачають цей бюджет."
+            "Збільш MAX_TOKENS і повтори запуск. У reasoning-моделей внутрішні "
+            "міркування також можуть витрачати цей ліміт."
         )
     return "\n".join(lines)
 
@@ -166,7 +163,7 @@ def ask(
     seed: int | None = SEED,
     system: str = "",
 ):
-    """Returns a dict: text, elapsed_s, cost, finish_reason, token counts, warning."""
+    """Викликає модель і повертає текст, статистику та можливе попередження."""
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
