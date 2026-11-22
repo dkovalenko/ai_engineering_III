@@ -355,8 +355,8 @@ def run_bonus_data_checks() -> list[str]:
     """Bonus files load and are consistent; rerankers are not downloaded here."""
     import json
 
-    id_tickets = json.loads(starter._IDS_PATH.read_text())
-    queries    = json.loads(starter._QUERIES_PATH.read_text())
+    id_tickets = json.loads(starter._IDS_PATH.read_text(encoding="utf-8"))
+    queries    = json.loads(starter._QUERIES_PATH.read_text(encoding="utf-8"))
     n_corpus   = len(starter.TICKETS) + len(id_tickets)
     failures: list[str] = []
     for q in queries:

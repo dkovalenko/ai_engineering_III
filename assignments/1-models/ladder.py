@@ -37,7 +37,7 @@ LADDER_MODELS = [
     {"id": "openrouter/meta-llama/llama-3.2-1b-instruct",  "label": "Nano   Dense  1B          (Sep 2024)"},
     {"id": "openrouter/google/gemma-3-4b-it",              "label": "Small  Dense  4B          (Mar 2025)"},
     {"id": "openrouter/qwen/qwen3-30b-a3b",                "label": "Qwen3  MoE   3B/30B       (Apr 2025)"},  # 3B active / 30B total
-    {"id": "openrouter/meta-llama/llama-4-scout",          "label": "Scout  MoE   17B/109B     (Apr 2025)"},  # 17B active / 109B total
+    {"id": "openrouter/qwen/qwen3-235b-a22b-2507",         "label": "Qwen3  MoE   22B/235B     (Jul 2025)"},  # 22B active / 235B total
     {"id": "openrouter/meta-llama/llama-3.3-70b-instruct", "label": "Large  Dense  70B         (Dec 2024)"},
     {"id": "openrouter/anthropic/claude-sonnet-4-6",       "label": "Claude Sonnet 4.6 Frontier (Feb 2026)"},
 ]

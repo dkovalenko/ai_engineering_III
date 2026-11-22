@@ -60,7 +60,7 @@ PROMPT = "YOUR PROMPT HERE"  # контекст або запитання (те�
 LARGE_MODELS = [
     "openrouter/anthropic/claude-sonnet-4-6",
     # "openrouter/z-ai/glm-5.2",
-    # "openrouter/meta-llama/llama-4-scout",
+    # "openrouter/qwen/qwen3-235b-a22b-2507",
 ]
 
 # ── Small / Local models — розкоментуй один ──────────────────────────────────

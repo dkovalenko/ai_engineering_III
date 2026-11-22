@@ -114,7 +114,7 @@ DEMO_QUERIES: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 _DATA_PATH = Path(__file__).parent / "data" / "tickets.json"
-TICKETS: list[dict] = json.loads(_DATA_PATH.read_text())
+TICKETS: list[dict] = json.loads(_DATA_PATH.read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -720,8 +720,8 @@ def evaluate_bonus(base_embeddings: np.ndarray) -> None:
     lists of the same depth. nDCG@5 and MRR@5 are reported per query type, with paired
     differences vs cosine on the same queries.
     """
-    corpus   = TICKETS + json.loads(_IDS_PATH.read_text())
-    queries  = json.loads(_QUERIES_PATH.read_text())
+    corpus   = TICKETS + json.loads(_IDS_PATH.read_text(encoding="utf-8"))
+    queries  = json.loads(_QUERIES_PATH.read_text(encoding="utf-8"))
     texts    = [t["text"] for t in corpus]
     index_of = {text: i for i, text in enumerate(texts)}
     embs     = np.vstack([base_embeddings, get_embeddings(texts[len(TICKETS):])])
@@ -1005,7 +1005,7 @@ def main() -> None:
         for cid in sorted(set(labels)):
             ctexts = [texts[i] for i in range(len(texts)) if labels[i] == cid]
             try:
-                name = name_cluster(ctexts[:10])
+                name = name_cluster(ctexts)
                 cluster_names[cid] = name
                 print(f"  Cluster {cid} → \"{name}\"")
             except NotImplementedError:
