@@ -105,7 +105,7 @@
 | llama-3.2-1b | Dense 1B | | | | |
 | gemma-3-4b-it | Dense 4B | | | | |
 | qwen3-30b-a3b | **MoE 3B/30B** | | | | |
-| llama-4-scout | **MoE 17B/109B** | | | | |
+| qwen3-235b-a22b | **MoE 22B/235B** | | | | |
 | llama-3.3-70b | Dense 70B | | | | |
 | claude-sonnet-4-6 | Frontier | | | | |
 
